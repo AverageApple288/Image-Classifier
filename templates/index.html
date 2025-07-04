@@ -2,9 +2,33 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Title</title>
+    <title>Image Classifier - Home</title>
+    {% include 'links.html' %}
 </head>
-<body>
+    <body>
+        {% include 'header.html' %}
 
-</body>
+        <main>
+            <div class="main-content">
+                {% if message %}
+                    <div class="alert-message">{{ message }}</div>
+                {% endif %}
+                <p>This is a simple image classifier I made from scratch (without importing any artificial intelligence packages) as a small project. You can try it out by uploading some images below to train the model and then test it's classification skills.</p>
+
+                <div class="form-row">
+                    <form action="/upload1" method="POST" enctype="multipart/form-data">
+                        <label for="zipfile">Upload a zip file of images for dataset one:</label>
+                        <input type="file" id="zipfile" name="zipfile" accept=".zip,.tar.gz,.tar.xz" required>
+                        <button type="submit">Upload</button>
+                    </form>
+
+                    <form action="/upload2" method="POST" enctype="multipart/form-data">
+                        <label for="zipfile2">Upload a zip file of images for dataset two:</label>
+                        <input type="file" id="zipfile2" name="zipfile2" accept=".zip,.tar.gz,.tar.xz" required>
+                        <button type="submit">Upload</button>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </body>
 </html>
