@@ -27,9 +27,13 @@
                         </div>
                     </div>
                     <div style="margin-top: 18px; text-align: center;">
-                        <button type="submit" style="width: 75%">Upload</button>
+                        <button type="submit" onclick="trainButtonClicked()" style="width: 75%">Upload</button>
                     </div>
                 </form>
+
+                <div style="text-align: center;">
+                    {{ trainbutton|safe }}
+                </div>
             </div>
         </main>
     </body>
