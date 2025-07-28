@@ -7,6 +7,7 @@ import numpy as np
 
 from backend.convolve import convolve
 from backend.filter_generation import generate_filter
+from backend.max_pool import max_pool
 
 from flask import Flask, render_template, request
 
@@ -117,11 +118,60 @@ def train_model():
     print(pixelinfo1[0].shape)
     print(pixelinfo2[0].shape)
 
-    normal_map = convolve(pixelinfo1[0], single_filter)
-    normal_map = np.maximum(0, normal_map)
+    normal_maps_1 = [[[] for j in range(5)] for i in range(len(pixelinfo1))]
 
-    print(f"Convolved image shape: {normal_map.shape}")
-    print(normal_map)
+    for i in range(len(pixelinfo1)):
+        print(f"Processing image {i + 1}/{len(pixelinfo1)}")
+        for j in range(16):
+            filter = layers[0][:,:,:,j]
+            normal_map = convolve(pixelinfo1[i], filter)
+            normal_map = np.maximum(0, normal_map)
+            normal_map = max_pool(normal_map, pool_size=2, stride=2)
+            normal_maps_1[i][0].append(normal_map)
+
+        print(f"Processed layer 0 for image {i + 1}")
+
+        for j in range(32):
+            filter = layers[1][:,:,:,j]
+            input_maps = np.concatenate(normal_maps_1[i][0], axis=-1)
+            normal_map = convolve(input_maps, filter)
+            normal_map = np.maximum(0, normal_map)
+            normal_map = max_pool(normal_map, pool_size=2, stride=2)
+            normal_maps_1[i][1].append(normal_map)
+
+        print(f"Processed layer 1 for image {i + 1}")
+
+        for j in range(64):
+            filter = layers[2][:,:,:,j]
+            input_maps = np.concatenate(normal_maps_1[i][1], axis=-1)
+            normal_map = convolve(input_maps, filter)
+            normal_map = np.maximum(0, normal_map)
+            normal_map = max_pool(normal_map, pool_size=2, stride=2)
+            normal_maps_1[i][2].append(normal_map)
+
+        print(f"Processed layer 2 for image {i + 1}")
+
+        for j in range(128):
+            filter = layers[3][:,:,:,j]
+            input_maps = np.concatenate(normal_maps_1[i][2], axis=-1)
+            normal_map = convolve(input_maps, filter)
+            normal_map = np.maximum(0, normal_map)
+            normal_map = max_pool(normal_map, pool_size=2, stride=2)
+            normal_maps_1[i][3].append(normal_map)
+
+        print(f"Processed layer 3 for image {i + 1}")
+
+        for j in range(256):
+            filter = layers[4][:,:,:,j]
+            input_maps = np.concatenate(normal_maps_1[i][3], axis=-1)
+            normal_map = convolve(input_maps, filter)
+            normal_map = np.maximum(0, normal_map)
+            normal_map = max_pool(normal_map, pool_size=2, stride=2)
+            normal_maps_1[i][4].append(normal_map)
+
+        print(f"Processed layer 4 for image {i + 1}")
+
+    print(normal_maps_1[0][4][0].shape)
 
     return render_template('index.html', message='Training complete.')
 
