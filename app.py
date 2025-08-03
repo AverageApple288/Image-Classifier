@@ -4,6 +4,7 @@ import zipfile
 from glob import glob
 import matplotlib.pylab as plt
 import numpy as np
+import time
 
 from backend.convolve import convolve
 from backend.filter_generation import generate_filter
@@ -120,16 +121,28 @@ def train_model():
 
     normal_maps_1 = [[[] for j in range(5)] for i in range(len(pixelinfo1))]
 
+    startTime = time.time()
+
     for i in range(len(pixelinfo1)):
         print(f"Processing image {i + 1}/{len(pixelinfo1)}")
         for j in range(16):
+            #print("Started processing layer 0: " + str(time.time() - startTime))
             filter = layers[0][:,:,:,j]
+            #print("Filter array initialised: " + str(time.time() - startTime))
+            #print("Convolution started: " + str(time.time() - startTime))
             normal_map = convolve(pixelinfo1[i], filter)
+            #print("Convolution done: " + str(time.time() - startTime))
+            #print("Applying ReLU activation: " + str(time.time() - startTime))
             normal_map = np.maximum(0, normal_map)
+            #print("ReLU activation applied: " + str(time.time() - startTime))
+            #print("Max pooling started: " + str(time.time() - startTime))
             normal_map = max_pool(normal_map, pool_size=2, stride=2)
+            #print("Max pooling done: " + str(time.time() - startTime))
+            #print("Appending normal map to the list: " + str(time.time() - startTime))
             normal_maps_1[i][0].append(normal_map)
-
-        print(f"Processed layer 0 for image {i + 1}")
+            #print("Normal map appended: " + str(time.time() - startTime))
+        first_layer = time.time()
+        print(f"Processed layer 0 for image {i + 1}: {first_layer - startTime} seconds")
 
         for j in range(32):
             filter = layers[1][:,:,:,j]
@@ -139,7 +152,8 @@ def train_model():
             normal_map = max_pool(normal_map, pool_size=2, stride=2)
             normal_maps_1[i][1].append(normal_map)
 
-        print(f"Processed layer 1 for image {i + 1}")
+        second_layer = time.time()
+        print(f"Processed layer 1 for image {i + 1}: {second_layer - first_layer} seconds")
 
         for j in range(64):
             filter = layers[2][:,:,:,j]
@@ -149,7 +163,8 @@ def train_model():
             normal_map = max_pool(normal_map, pool_size=2, stride=2)
             normal_maps_1[i][2].append(normal_map)
 
-        print(f"Processed layer 2 for image {i + 1}")
+        third_layer = time.time()
+        print(f"Processed layer 2 for image {i + 1}: {third_layer - second_layer} seconds")
 
         for j in range(128):
             filter = layers[3][:,:,:,j]
@@ -159,7 +174,8 @@ def train_model():
             normal_map = max_pool(normal_map, pool_size=2, stride=2)
             normal_maps_1[i][3].append(normal_map)
 
-        print(f"Processed layer 3 for image {i + 1}")
+        fourth_layer = time.time()
+        print(f"Processed layer 3 for image {i + 1}: {fourth_layer - third_layer} seconds")
 
         for j in range(256):
             filter = layers[4][:,:,:,j]
@@ -169,7 +185,8 @@ def train_model():
             normal_map = max_pool(normal_map, pool_size=2, stride=2)
             normal_maps_1[i][4].append(normal_map)
 
-        print(f"Processed layer 4 for image {i + 1}")
+        fifth_layer = time.time()
+        print(f"Processed layer 4 for image {i + 1}: {fifth_layer - fourth_layer} seconds")
 
     print(normal_maps_1[0][4][0].shape)
 
