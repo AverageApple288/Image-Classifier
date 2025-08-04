@@ -3,11 +3,12 @@ import tarfile
 import zipfile
 from glob import glob
 import matplotlib.pylab as plt
-import numpy as np
+import cupy as cp
+import numpy as np  # Keep numpy for compatibility with matplotlib
 import time
 
 from backend.convolve import convolve
-from backend.filter_generation import generate_filter
+from backend.filter_generation import generate_layer
 from backend.max_pool import max_pool
 
 from flask import Flask, render_template, request
@@ -85,6 +86,19 @@ def train_model():
     upload1_images = glob(os.path.join(app.static_folder, 'extracted_files1', filename1, '*'))
     upload2_images = glob(os.path.join(app.static_folder, 'extracted_files2', filename2, '*'))
 
+    try:
+        x_gpu = cp.array([1, 2, 3])
+        print("CuPy array created successfully on the GPU.")
+        print(x_gpu)
+        print("Number of GPUs available:", cp.cuda.runtime.getDeviceCount())
+        std_dev = cp.sqrt(2.0 / 0.5)
+        print("Standard deviation calculated successfully:", std_dev)
+    except cp.cuda.runtime.CUDARuntimeError as e:
+        print(f"Error: CuPy could not initialize. Check your CUDA installation. Error details: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+
     # Initialize lists to store images
     pixelinfo1 = []
     pixelinfo2 = []
@@ -106,34 +120,33 @@ def train_model():
 
     # Generate filters and store them
     for i in range(5):
-        layer = generate_filter(filter_height, filter_width, in_channels, out_channels)
+        layer = generate_layer(filter_height, filter_width, in_channels, out_channels)
         layers.append(layer)
         print(f"Generated filters for layer {i + 1} with shape: {layer.shape}")
         out_channels *= 2
 
     print("Generated filters for 5 layers.")
 
-    # Example of accessing pixel information
-    single_filter = layers[0][:, :, :, 0]
-    print(single_filter.shape)
-    print(pixelinfo1[0].shape)
-    print(pixelinfo2[0].shape)
+    # Convert numpy arrays to cupy arrays for GPU processing
+    pixelinfo1_gpu = [cp.asarray(img) for img in pixelinfo1]
+    pixelinfo2_gpu = [cp.asarray(img) for img in pixelinfo2]
+    layers_gpu = [cp.asarray(layer) for layer in layers]
 
-    normal_maps_1 = [[[] for j in range(5)] for i in range(len(pixelinfo1))]
+    normal_maps_1 = [[[] for j in range(5)] for i in range(len(pixelinfo1_gpu))]
 
-    startTime = time.time()
+    for i in range(len(pixelinfo1_gpu)):
+        startTime = time.time()
+        print(f"Processing image {i + 1}/{len(pixelinfo1_gpu)}")
 
-    for i in range(len(pixelinfo1)):
-        print(f"Processing image {i + 1}/{len(pixelinfo1)}")
         for j in range(16):
             #print("Started processing layer 0: " + str(time.time() - startTime))
-            filter = layers[0][:,:,:,j]
+            filter = layers_gpu[0][:,:,:,j]
             #print("Filter array initialised: " + str(time.time() - startTime))
             #print("Convolution started: " + str(time.time() - startTime))
-            normal_map = convolve(pixelinfo1[i], filter)
+            normal_map = convolve(pixelinfo1_gpu[i], filter)
             #print("Convolution done: " + str(time.time() - startTime))
             #print("Applying ReLU activation: " + str(time.time() - startTime))
-            normal_map = np.maximum(0, normal_map)
+            normal_map = cp.maximum(0, normal_map)
             #print("ReLU activation applied: " + str(time.time() - startTime))
             #print("Max pooling started: " + str(time.time() - startTime))
             normal_map = max_pool(normal_map, pool_size=2, stride=2)
@@ -145,10 +158,10 @@ def train_model():
         print(f"Processed layer 0 for image {i + 1}: {first_layer - startTime} seconds")
 
         for j in range(32):
-            filter = layers[1][:,:,:,j]
-            input_maps = np.concatenate(normal_maps_1[i][0], axis=-1)
+            filter = layers_gpu[1][:,:,:,j]
+            input_maps = cp.concatenate(normal_maps_1[i][0], axis=-1)
             normal_map = convolve(input_maps, filter)
-            normal_map = np.maximum(0, normal_map)
+            normal_map = cp.maximum(0, normal_map)
             normal_map = max_pool(normal_map, pool_size=2, stride=2)
             normal_maps_1[i][1].append(normal_map)
 
@@ -156,10 +169,10 @@ def train_model():
         print(f"Processed layer 1 for image {i + 1}: {second_layer - first_layer} seconds")
 
         for j in range(64):
-            filter = layers[2][:,:,:,j]
-            input_maps = np.concatenate(normal_maps_1[i][1], axis=-1)
+            filter = layers_gpu[2][:,:,:,j]
+            input_maps = cp.concatenate(normal_maps_1[i][1], axis=-1)
             normal_map = convolve(input_maps, filter)
-            normal_map = np.maximum(0, normal_map)
+            normal_map = cp.maximum(0, normal_map)
             normal_map = max_pool(normal_map, pool_size=2, stride=2)
             normal_maps_1[i][2].append(normal_map)
 
@@ -167,10 +180,10 @@ def train_model():
         print(f"Processed layer 2 for image {i + 1}: {third_layer - second_layer} seconds")
 
         for j in range(128):
-            filter = layers[3][:,:,:,j]
-            input_maps = np.concatenate(normal_maps_1[i][2], axis=-1)
+            filter = layers_gpu[3][:,:,:,j]
+            input_maps = cp.concatenate(normal_maps_1[i][2], axis=-1)
             normal_map = convolve(input_maps, filter)
-            normal_map = np.maximum(0, normal_map)
+            normal_map = cp.maximum(0, normal_map)
             normal_map = max_pool(normal_map, pool_size=2, stride=2)
             normal_maps_1[i][3].append(normal_map)
 
@@ -178,19 +191,23 @@ def train_model():
         print(f"Processed layer 3 for image {i + 1}: {fourth_layer - third_layer} seconds")
 
         for j in range(256):
-            filter = layers[4][:,:,:,j]
-            input_maps = np.concatenate(normal_maps_1[i][3], axis=-1)
+            filter = layers_gpu[4][:,:,:,j]
+            input_maps = cp.concatenate(normal_maps_1[i][3], axis=-1)
             normal_map = convolve(input_maps, filter)
-            normal_map = np.maximum(0, normal_map)
+            normal_map = cp.maximum(0, normal_map)
             normal_map = max_pool(normal_map, pool_size=2, stride=2)
             normal_maps_1[i][4].append(normal_map)
 
         fifth_layer = time.time()
         print(f"Processed layer 4 for image {i + 1}: {fifth_layer - fourth_layer} seconds")
 
+    # Convert the output shape back to numpy for compatibility with the rest of the code
     print(normal_maps_1[0][4][0].shape)
 
-    return render_template('index.html', message='Training complete.')
+    # Clear GPU memory
+    cp.get_default_memory_pool().free_all_blocks()
+
+    return render_template('index.html', message='Training complete using GPU acceleration.')
 
 if __name__ == '__main__':
     app.run(debug=True)
