@@ -2,15 +2,15 @@ import os
 import tarfile
 import zipfile
 from glob import glob
-import matplotlib.pylab as plt
-import numpy as np
 import time
 from functools import partial
 from multiprocessing import Pool, cpu_count
 
-from backend.convolve import convolve
+import numpy as np
+
+from backend.neural_network import flatten_output, dense_layer, sigmoid, final_dense_layer
+from backend.process_image import process_image
 from backend.filter_generation import generate_filter
-from backend.max_pool import max_pool
 
 from flask import Flask, render_template, request
 
@@ -84,37 +84,6 @@ def upload_files():
 
 numProcessed = 0
 
-def process_image(image_path, layers):
-    """Processes a single image through all layers."""
-    pixelinfo = plt.imread(image_path)
-    normal_maps = [[] for _ in range(len(layers))]
-
-    # Layer 0
-    out_channels_layer0 = layers[0].shape[3]
-    for j in range(out_channels_layer0):
-        filter_slice = layers[0][:, :, :, j]
-        normal_map = convolve(pixelinfo, filter_slice) # Output is 2D
-        normal_map = np.maximum(0, normal_map)
-        # Add channel dimension for max_pool
-        normal_map = max_pool(normal_map[:, :, np.newaxis], pool_size=2, stride=2)
-        normal_maps[0].append(normal_map)
-
-    # Subsequent layers
-    for i in range(1, len(layers)):
-        # Concatenate along the channel axis
-        input_maps = np.concatenate(normal_maps[i-1], axis=-1)
-        out_channels = layers[i].shape[3]
-        for j in range(out_channels):
-            filter_slice = layers[i][:, :, :, j]
-            normal_map = convolve(input_maps, filter_slice) # Output is 2D
-            normal_map = np.maximum(0, normal_map)
-            # Add channel dimension for max_pool
-            normal_map = max_pool(normal_map[:, :, np.newaxis], pool_size=2, stride=2)
-            normal_maps[i].append(normal_map)
-
-    # Return the final feature maps for the image
-    return normal_maps
-
 @app.route('/train', methods=['GET'])
 def train_model():
     global filename1, filename2
@@ -160,8 +129,36 @@ def train_model():
     if results1:
         print("Shape of a final feature map from dataset 1:", results1[0][-1][0].shape)
 
+    if results2:
+        print("Shape of a final feature map from dataset 2:", results2[0][-1][0].shape)
 
-    return render_template('index.html', message='Training complete.')
+    flattened_results1 = []
+    flattened_results2 = []
+
+    for i in range(len(results1)):
+        flattened_results1.append(flatten_output(results1[i][-1][0]))
+        flattened_results2.append(flatten_output(results2[i][-1][0]))
+
+    batch_input = np.concatenate([flattened_results1, flattened_results2], axis=0)
+
+    num_neurons = 128
+    num_input_features = flattened_results1[0].shape[0]
+    weights = np.random.randn(num_input_features, num_neurons)
+    bias = np.random.randn(num_neurons)
+
+    activated_results = dense_layer(batch_input, weights, bias)
+
+    num_neurons = 128
+    final_weights = np.random.randn(num_neurons, 1)
+    final_bias = np.random.randn(1)
+
+    final_activated_results = final_dense_layer(activated_results, final_weights, final_bias)
+
+    return render_template('classify.html', results1=results1, results2=results2)
+
+@app.route('/classify', methods=['GET'])
+def classify_image():
+    return render_template('classify.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
