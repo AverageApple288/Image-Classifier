@@ -5,6 +5,8 @@ from glob import glob
 import matplotlib.pylab as plt
 import numpy as np
 import time
+from functools import partial
+from multiprocessing import Pool, cpu_count
 
 from backend.convolve import convolve
 from backend.filter_generation import generate_filter
@@ -80,115 +82,84 @@ def upload_files():
 
     return render_template('index.html', trainbutton=trainbutton, message=' '.join(messages))
 
+numProcessed = 0
+
+def process_image(image_path, layers):
+    """Processes a single image through all layers."""
+    pixelinfo = plt.imread(image_path)
+    normal_maps = [[] for _ in range(len(layers))]
+
+    # Layer 0
+    out_channels_layer0 = layers[0].shape[3]
+    for j in range(out_channels_layer0):
+        filter_slice = layers[0][:, :, :, j]
+        normal_map = convolve(pixelinfo, filter_slice) # Output is 2D
+        normal_map = np.maximum(0, normal_map)
+        # Add channel dimension for max_pool
+        normal_map = max_pool(normal_map[:, :, np.newaxis], pool_size=2, stride=2)
+        normal_maps[0].append(normal_map)
+
+    # Subsequent layers
+    for i in range(1, len(layers)):
+        # Concatenate along the channel axis
+        input_maps = np.concatenate(normal_maps[i-1], axis=-1)
+        out_channels = layers[i].shape[3]
+        for j in range(out_channels):
+            filter_slice = layers[i][:, :, :, j]
+            normal_map = convolve(input_maps, filter_slice) # Output is 2D
+            normal_map = np.maximum(0, normal_map)
+            # Add channel dimension for max_pool
+            normal_map = max_pool(normal_map[:, :, np.newaxis], pool_size=2, stride=2)
+            normal_maps[i].append(normal_map)
+
+    # Return the final feature maps for the image
+    return normal_maps
+
 @app.route('/train', methods=['GET'])
 def train_model():
+    global filename1, filename2
     upload1_images = glob(os.path.join(app.static_folder, 'extracted_files1', filename1, '*'))
     upload2_images = glob(os.path.join(app.static_folder, 'extracted_files2', filename2, '*'))
-
-    # Initialize lists to store images
-    pixelinfo1 = []
-    pixelinfo2 = []
-
-    # Read images and store them in lists
-    for image_path in upload1_images:
-        pixelinfo1.append(plt.imread(image_path))
-    
-    for image_path in upload2_images:
-        pixelinfo2.append(plt.imread(image_path))
 
     filter_height = 3
     filter_width = 3
     in_channels = 3
     out_channels = 16
 
-    # Initialize list for layers
     layers = []
-
-    # Generate filters and store them
     for i in range(5):
         layer = generate_filter(filter_height, filter_width, in_channels, out_channels)
         layers.append(layer)
         print(f"Generated filters for layer {i + 1} with shape: {layer.shape}")
+        # For subsequent layers, in_channels will be the out_channels of the previous one
+        in_channels = out_channels
         out_channels *= 2
 
     print("Generated filters for 5 layers.")
-
-    # Example of accessing pixel information
-    single_filter = layers[0][:, :, :, 0]
-    print(single_filter.shape)
-    print(pixelinfo1[0].shape)
-    print(pixelinfo2[0].shape)
-
-    normal_maps_1 = [[[] for j in range(5)] for i in range(len(pixelinfo1))]
-
     startTime = time.time()
 
-    for i in range(len(pixelinfo1)):
-        print(f"Processing image {i + 1}/{len(pixelinfo1)}")
-        for j in range(16):
-            #print("Started processing layer 0: " + str(time.time() - startTime))
-            filter = layers[0][:,:,:,j]
-            #print("Filter array initialised: " + str(time.time() - startTime))
-            #print("Convolution started: " + str(time.time() - startTime))
-            normal_map = convolve(pixelinfo1[i], filter)
-            #print("Convolution done: " + str(time.time() - startTime))
-            #print("Applying ReLU activation: " + str(time.time() - startTime))
-            normal_map = np.maximum(0, normal_map)
-            #print("ReLU activation applied: " + str(time.time() - startTime))
-            #print("Max pooling started: " + str(time.time() - startTime))
-            normal_map = max_pool(normal_map, pool_size=2, stride=2)
-            #print("Max pooling done: " + str(time.time() - startTime))
-            #print("Appending normal map to the list: " + str(time.time() - startTime))
-            normal_maps_1[i][0].append(normal_map)
-            #print("Normal map appended: " + str(time.time() - startTime))
-        first_layer = time.time()
-        print(f"Processed layer 0 for image {i + 1}: {first_layer - startTime} seconds")
+    # Use multiprocessing to process images in parallel
+    num_processes = cpu_count()
+    print(f"Starting image processing with {num_processes} processes...")
 
-        for j in range(32):
-            filter = layers[1][:,:,:,j]
-            input_maps = np.concatenate(normal_maps_1[i][0], axis=-1)
-            normal_map = convolve(input_maps, filter)
-            normal_map = np.maximum(0, normal_map)
-            normal_map = max_pool(normal_map, pool_size=2, stride=2)
-            normal_maps_1[i][1].append(normal_map)
+    with Pool(processes=num_processes) as pool:
+        # We use partial to pass the 'layers' argument to process_image
+        process_func = partial(process_image, layers=layers)
 
-        second_layer = time.time()
-        print(f"Processed layer 1 for image {i + 1}: {second_layer - first_layer} seconds")
+        print("Processing dataset 1...")
+        results1 = pool.map(process_func, upload1_images)
 
-        for j in range(64):
-            filter = layers[2][:,:,:,j]
-            input_maps = np.concatenate(normal_maps_1[i][1], axis=-1)
-            normal_map = convolve(input_maps, filter)
-            normal_map = np.maximum(0, normal_map)
-            normal_map = max_pool(normal_map, pool_size=2, stride=2)
-            normal_maps_1[i][2].append(normal_map)
+        print("Processing dataset 2...")
+        results2 = pool.map(process_func, upload2_images)
 
-        third_layer = time.time()
-        print(f"Processed layer 2 for image {i + 1}: {third_layer - second_layer} seconds")
+    endTime = time.time()
+    print(f"Finished processing all images in {endTime - startTime:.2f} seconds.")
 
-        for j in range(128):
-            filter = layers[3][:,:,:,j]
-            input_maps = np.concatenate(normal_maps_1[i][2], axis=-1)
-            normal_map = convolve(input_maps, filter)
-            normal_map = np.maximum(0, normal_map)
-            normal_map = max_pool(normal_map, pool_size=2, stride=2)
-            normal_maps_1[i][3].append(normal_map)
+    # `results1` and `results2` now contain the processed feature maps for each image
+    # Example: access the first image's final layer's first feature map
+    if results1:
+        print("Shape of a final feature map from dataset 1:", results1[0][-1][0].shape)
 
-        fourth_layer = time.time()
-        print(f"Processed layer 3 for image {i + 1}: {fourth_layer - third_layer} seconds")
-
-        for j in range(256):
-            filter = layers[4][:,:,:,j]
-            input_maps = np.concatenate(normal_maps_1[i][3], axis=-1)
-            normal_map = convolve(input_maps, filter)
-            normal_map = np.maximum(0, normal_map)
-            normal_map = max_pool(normal_map, pool_size=2, stride=2)
-            normal_maps_1[i][4].append(normal_map)
-
-        fifth_layer = time.time()
-        print(f"Processed layer 4 for image {i + 1}: {fifth_layer - fourth_layer} seconds")
-
-    print(normal_maps_1[0][4][0].shape)
 
     return render_template('index.html', message='Training complete.')
 
