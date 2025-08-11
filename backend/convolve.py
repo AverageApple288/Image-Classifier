@@ -1,6 +1,15 @@
 import cupy as cp
 
 def convolve(image, conv_filter):
+    """Efficiently convolve an image with a filter using GPU parallelization.
+
+    Args:
+        image: Input image tensor of shape (height, width, channels)
+        conv_filter: Convolution filter of shape (filter_height, filter_width, channels)
+
+    Returns:
+        Convolved output of shape (height, width, channels)
+    """
     filter_height, filter_width, in_channels = conv_filter.shape
     img_height, img_width, img_channels = image.shape
 
@@ -14,11 +23,19 @@ def convolve(image, conv_filter):
         mode='constant'
     )
 
+    # Prepare output array
     output = cp.zeros((img_height, img_width, in_channels))
 
+    # Use GPU-accelerated batch processing for each channel
     for c in range(in_channels):
-        for i in range(img_height):
-            for j in range(img_width):
-                patch = padded_image[i:i+filter_height, j:j+filter_width, c]
-                output[i, j, c] = cp.sum(patch * conv_filter[:, :, c])
+        # Create a view of the padded image for the current channel
+        padded_channel = padded_image[:, :, c]
+        filter_channel = conv_filter[:, :, c]
+
+        # Use CuPy's correlate2d equivalent - we build it manually for maximum GPU utilization
+        # This creates a kernel that applies the filter to all positions at once
+        for i in range(filter_height):
+            for j in range(filter_width):
+                output[:, :, c] += padded_channel[i:i+img_height, j:j+img_width] * filter_channel[i, j]
+
     return output

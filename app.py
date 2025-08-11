@@ -8,6 +8,7 @@ import numpy as np  # Keep numpy for compatibility with matplotlib
 import time
 
 from backend.convolve import convolve
+from backend.convolve_optimized import convolve_optimized, batch_convolve
 from backend.filter_generation import generate_layer
 from backend.max_pool import max_pool
 
@@ -143,11 +144,11 @@ def train_model():
             filter = layers_gpu[0][:,:,:,j]
             #print("Filter array initialised: " + str(time.time() - startTime))
             #print("Convolution started: " + str(time.time() - startTime))
-            normal_map = convolve(pixelinfo1_gpu[i], filter)
+            normal_map = convolve_optimized(pixelinfo1_gpu[i], filter)  # Using optimized convolution
             #print("Convolution done: " + str(time.time() - startTime))
             #print("Applying ReLU activation: " + str(time.time() - startTime))
             normal_map = cp.maximum(0, normal_map)
-            #print("ReLU activation applied: " + str(time.time() - startTime))
+            #print("ReLU activation appli" + str(time.time() - startTime))
             #print("Max pooling started: " + str(time.time() - startTime))
             normal_map = max_pool(normal_map, pool_size=2, stride=2)
             #print("Max pooling done: " + str(time.time() - startTime))
@@ -160,7 +161,7 @@ def train_model():
         for j in range(32):
             filter = layers_gpu[1][:,:,:,j]
             input_maps = cp.concatenate(normal_maps_1[i][0], axis=-1)
-            normal_map = convolve(input_maps, filter)
+            normal_map = convolve_optimized(input_maps, filter)  # Using optimized convolution
             normal_map = cp.maximum(0, normal_map)
             normal_map = max_pool(normal_map, pool_size=2, stride=2)
             normal_maps_1[i][1].append(normal_map)
@@ -171,7 +172,7 @@ def train_model():
         for j in range(64):
             filter = layers_gpu[2][:,:,:,j]
             input_maps = cp.concatenate(normal_maps_1[i][1], axis=-1)
-            normal_map = convolve(input_maps, filter)
+            normal_map = convolve_optimized(input_maps, filter)  # Using optimized convolution
             normal_map = cp.maximum(0, normal_map)
             normal_map = max_pool(normal_map, pool_size=2, stride=2)
             normal_maps_1[i][2].append(normal_map)
@@ -182,7 +183,7 @@ def train_model():
         for j in range(128):
             filter = layers_gpu[3][:,:,:,j]
             input_maps = cp.concatenate(normal_maps_1[i][2], axis=-1)
-            normal_map = convolve(input_maps, filter)
+            normal_map = convolve_optimized(input_maps, filter)  # Using optimized convolution
             normal_map = cp.maximum(0, normal_map)
             normal_map = max_pool(normal_map, pool_size=2, stride=2)
             normal_maps_1[i][3].append(normal_map)
@@ -193,7 +194,7 @@ def train_model():
         for j in range(256):
             filter = layers_gpu[4][:,:,:,j]
             input_maps = cp.concatenate(normal_maps_1[i][3], axis=-1)
-            normal_map = convolve(input_maps, filter)
+            normal_map = convolve_optimized(input_maps, filter)  # Using optimized convolution
             normal_map = cp.maximum(0, normal_map)
             normal_map = max_pool(normal_map, pool_size=2, stride=2)
             normal_maps_1[i][4].append(normal_map)
