@@ -8,7 +8,7 @@ from multiprocessing import Pool, cpu_count
 
 import numpy as np
 
-from backend.neural_network import flatten_output, dense_layer, sigmoid, final_dense_layer
+from backend.neural_network import flatten_output, hidden_dense_layer, sigmoid, final_dense_layer, binary_cross_entropy_loss
 from backend.process_image import process_image
 from backend.filter_generation import generate_filter
 
@@ -132,6 +132,11 @@ def train_model():
     if results2:
         print("Shape of a final feature map from dataset 2:", results2[0][-1][0].shape)
 
+    lenDataset1 = len(results1)
+    lenDataset2 = len(results2)
+
+    real_values = np.array([1] * lenDataset1 + [0] * lenDataset2).reshape(-1, 1)
+
     flattened_results1 = []
     flattened_results2 = []
 
@@ -141,18 +146,50 @@ def train_model():
 
     batch_input = np.concatenate([flattened_results1, flattened_results2], axis=0)
 
+    epochs = 10
+    learning_rate = 0.001
     num_neurons = 128
     num_input_features = flattened_results1[0].shape[0]
-    weights = np.random.randn(num_input_features, num_neurons)
-    bias = np.random.randn(num_neurons)
-
-    activated_results = dense_layer(batch_input, weights, bias)
-
-    num_neurons = 128
-    final_weights = np.random.randn(num_neurons, 1)
+    hidden_weights = np.random.randn(num_input_features, num_neurons) * np.sqrt(1.0 / num_input_features)
+    hidden_bias = np.random.randn(num_neurons)
+    final_weights = np.random.randn(num_neurons, 1) * np.sqrt(1.0 / num_neurons)
     final_bias = np.random.randn(1)
 
-    final_activated_results = final_dense_layer(activated_results, final_weights, final_bias)
+
+    for epoch in range(epochs):
+        activated_hidden_output, hidden_output_before_activation = hidden_dense_layer(batch_input, hidden_weights, hidden_bias)
+
+        activated_final_output = final_dense_layer(activated_hidden_output, final_weights, final_bias)
+
+        print(activated_final_output)
+
+        loss = binary_cross_entropy_loss(real_values, activated_final_output)
+
+        d_loss = activated_final_output - real_values
+
+        d_weights_final = np.dot(activated_hidden_output.T, d_loss)
+        d_bias_final = np.sum(d_loss, axis=0)
+
+        d_activated_hidden = np.dot(d_loss, final_weights.T)
+
+        d_hidden_before_activation = d_activated_hidden * (hidden_output_before_activation > 0)
+
+        d_weights_hidden = np.dot(batch_input.T, d_hidden_before_activation)
+        d_bias_hidden = np.sum(d_hidden_before_activation, axis=0)
+
+        final_weights -= learning_rate * d_weights_final
+        final_bias -= learning_rate * d_bias_final
+
+        hidden_weights -= learning_rate * d_weights_hidden
+        hidden_bias -= learning_rate * d_bias_hidden
+
+        print(f"Epoch {epoch + 1}, Loss: {loss}")
+
+    activated_hidden_output, hidden_output_before_activation = hidden_dense_layer(batch_input, hidden_weights, hidden_bias)
+
+    activated_final_output = final_dense_layer(activated_hidden_output, final_weights, final_bias)
+
+    print(activated_final_output.flatten())
 
     return render_template('classify.html', results1=results1, results2=results2)
 
