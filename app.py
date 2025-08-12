@@ -12,12 +12,13 @@ from backend.neural_network import flatten_output, hidden_dense_layer, sigmoid, 
 from backend.process_image import process_image
 from backend.filter_generation import generate_filter
 
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, session
 
 filename1 = None
 filename2 = None
 
 app = Flask(__name__)
+app.secret_key = 'CrazySecretKey123'
 
 @app.route('/')
 def hello_world():
@@ -84,7 +85,7 @@ def upload_files():
 
 numProcessed = 0
 
-@app.route('/train', methods=['GET'])
+@app.route('/train', methods=['GET', 'POST'])
 def train_model():
     global filename1, filename2
     upload1_images = glob(os.path.join(app.static_folder, 'extracted_files1', filename1, '*'))
@@ -146,22 +147,22 @@ def train_model():
 
     batch_input = np.concatenate([flattened_results1, flattened_results2], axis=0)
 
-    epochs = 10
-    learning_rate = 0.001
+    epochs = 1000
+    #learning_rate = 0.001
+    learning_rate = 0.0005
     num_neurons = 128
     num_input_features = flattened_results1[0].shape[0]
-    hidden_weights = np.random.randn(num_input_features, num_neurons) * np.sqrt(1.0 / num_input_features)
+    hidden_weights = np.random.randn(num_input_features, num_neurons) # * np.sqrt(1.0 / num_input_features)
     hidden_bias = np.random.randn(num_neurons)
-    final_weights = np.random.randn(num_neurons, 1) * np.sqrt(1.0 / num_neurons)
+    final_weights = np.random.randn(num_neurons, 1) # * np.sqrt(1.0 / num_neurons)
     final_bias = np.random.randn(1)
-
 
     for epoch in range(epochs):
         activated_hidden_output, hidden_output_before_activation = hidden_dense_layer(batch_input, hidden_weights, hidden_bias)
 
         activated_final_output = final_dense_layer(activated_hidden_output, final_weights, final_bias)
 
-        print(activated_final_output)
+        #print(activated_final_output)
 
         loss = binary_cross_entropy_loss(real_values, activated_final_output)
 
@@ -191,10 +192,22 @@ def train_model():
 
     print(activated_final_output.flatten())
 
-    return render_template('classify.html', results1=results1, results2=results2)
+    session['final_weights'] = final_weights
+    session['final_bias'] = final_bias
+    session['hidden_weights'] = hidden_weights
+    session['hidden_bias'] = hidden_bias
 
-@app.route('/classify', methods=['GET'])
+    return render_template('classify.html')
+
+@app.route('/classify', methods=['GET', 'POST'])
 def classify_image():
+    final_weights = session.get('final_weights')
+    final_bias = session.get('final_bias')
+    hidden_weights = session.get('hidden_weights')
+    hidden_bias = session.get('hidden_bias')
+
+
+
     return render_template('classify.html')
 
 if __name__ == '__main__':
