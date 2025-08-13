@@ -20,6 +20,8 @@ filename2 = None
 app = Flask(__name__)
 app.secret_key = 'CrazySecretKey123'
 
+MODEL_FILE_PATH = os.path.join(app.static_folder, 'model', 'trained_model.npz')
+
 @app.route('/')
 def hello_world():
     return render_template('index.html')
@@ -29,6 +31,9 @@ def upload_files():
     uploaded_file1 = request.files.get('zipfile')
     uploaded_file2 = request.files.get('zipfile2')
     messages = []
+
+    session['dataset1_name'] = request.form.get('dataset1_name')
+    session['dataset2_name'] = request.form.get('dataset2_name')
 
     # Dataset one
     if uploaded_file1 and uploaded_file1.filename:
@@ -82,8 +87,6 @@ def upload_files():
     filename2 = os.path.splitext(filename2)[0]
 
     return render_template('index.html', trainbutton=trainbutton, message=' '.join(messages))
-
-numProcessed = 0
 
 @app.route('/train', methods=['GET', 'POST'])
 def train_model():
@@ -143,13 +146,15 @@ def train_model():
 
     for i in range(len(results1)):
         flattened_results1.append(flatten_output(results1[i][-1][0]))
+
+    for i in range(len(results2)):
         flattened_results2.append(flatten_output(results2[i][-1][0]))
 
     batch_input = np.concatenate([flattened_results1, flattened_results2], axis=0)
 
     epochs = 1000
-    #learning_rate = 0.001
-    learning_rate = 0.0005
+    learning_rate = 0.001
+    #learning_rate = 0.0005
     num_neurons = 128
     num_input_features = flattened_results1[0].shape[0]
     hidden_weights = np.random.randn(num_input_features, num_neurons) # * np.sqrt(1.0 / num_input_features)
@@ -161,8 +166,6 @@ def train_model():
         activated_hidden_output, hidden_output_before_activation = hidden_dense_layer(batch_input, hidden_weights, hidden_bias)
 
         activated_final_output = final_dense_layer(activated_hidden_output, final_weights, final_bias)
-
-        #print(activated_final_output)
 
         loss = binary_cross_entropy_loss(real_values, activated_final_output)
 
@@ -192,23 +195,103 @@ def train_model():
 
     print(activated_final_output.flatten())
 
-    session['final_weights'] = final_weights
-    session['final_bias'] = final_bias
-    session['hidden_weights'] = hidden_weights
-    session['hidden_bias'] = hidden_bias
+    os.makedirs(os.path.dirname(MODEL_FILE_PATH), exist_ok=True)
+    layer_dict = {f'layer_{i}': layer for i, layer in enumerate(layers)}
+
+    # Save the trained parameters to a file
+    np.savez(MODEL_FILE_PATH,
+             final_weights=final_weights,
+             final_bias=final_bias,
+             hidden_weights=hidden_weights,
+             hidden_bias=hidden_bias,
+             num_layers=len(layers),
+             **layer_dict)
+    print(f"Model saved to {MODEL_FILE_PATH}")
 
     return render_template('classify.html')
 
-@app.route('/classify', methods=['GET', 'POST'])
-def classify_image():
-    final_weights = session.get('final_weights')
-    final_bias = session.get('final_bias')
-    hidden_weights = session.get('hidden_weights')
-    hidden_bias = session.get('hidden_bias')
+@app.route('/sort', methods=['GET', 'POST'])
+def sort_images():
+    # Load the trained parameters from the file
+    if not os.path.exists(MODEL_FILE_PATH):
+        return "Model not trained yet. Please go back and train the model first.", 400
+
+    with np.load(MODEL_FILE_PATH, allow_pickle=True) as data:
+        final_weights = data['final_weights']
+        final_bias = data['final_bias']
+        hidden_weights = data['hidden_weights']
+        hidden_bias = data['hidden_bias']
+        # Reconstruct the layers list from the saved file
+        num_layers = data['num_layers']
+        layers = [data[f'layer_{i}'] for i in range(num_layers)]
+
+    uploaded_file = request.files.get('zipfile')
+
+    messages = []
+
+    if uploaded_file and uploaded_file.filename:
+        filename = uploaded_file.filename
+        upload_path = os.path.join(app.static_folder, 'uploads', filename)
+        extract_path = os.path.join(app.static_folder, 'extracted_files')
+        os.makedirs(os.path.dirname(upload_path), exist_ok=True)
+        os.makedirs(extract_path, exist_ok=True)
+        uploaded_file.save(upload_path)
+        if filename.endswith('.zip'):
+            with zipfile.ZipFile(upload_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_path)
+            messages.append('Dataset one: Zip file processed and extracted.')
+        elif filename.endswith('.tar.gz') or filename.endswith('.tar.xz'):
+            mode = 'r:gz' if filename.endswith('.tar.gz') else 'r:xz'
+            with tarfile.open(upload_path, mode) as tar_ref:
+                tar_ref.extractall(extract_path)
+            messages.append(f'Dataset one: {os.path.splitext(filename)[1]} file processed and extracted.')
+        else:
+            messages.append('Dataset one: Invalid file type.')
+    else:
+        messages.append('Dataset one: No file uploaded.')
+
+    upload_images = glob(os.path.join(extract_path, '**', '*'), recursive=True)
+    upload_images = [f for f in upload_images if os.path.isfile(f)]
+
+    # Use multiprocessing to process images in parallel
+    num_processes = cpu_count()
+    print(f"Starting image processing with {num_processes} processes...")
+
+    with Pool(processes=num_processes) as pool:
+        # We use partial to pass the 'layers' argument to process_image
+        process_func = partial(process_image, layers=layers)
+
+        print("Processing dataset...")
+        results = pool.map(process_func, upload_images)
+
+    flattened_results = []
+    categorisation = []
+
+    for i in range(len(results)):
+        flattened_results.append(flatten_output(results[i][-1][0]))
+
+    for i in range(len(upload_images)):
+        activated_hidden_output, hidden_output_before_activation = hidden_dense_layer(flattened_results[i], hidden_weights, hidden_bias)
+        activated_final_output = final_dense_layer(activated_hidden_output, final_weights, final_bias)
+        print(activated_final_output)
+
+        if activated_final_output > 0.5:
+            categorisation.append(1)
+        else:
+            categorisation.append(0)
 
 
+    dataset1_images = []
+    dataset2_images = []
 
-    return render_template('classify.html')
+    for i, image_path in enumerate(upload_images):
+        relative_path = os.path.relpath(image_path, app.static_folder).replace('\\', '/')
+        if categorisation[i] == 1:
+            dataset1_images.append(relative_path)
+        else:
+            dataset2_images.append(relative_path)
+
+    return render_template('sorted.html', message=' '.join(messages), dataset1_name=session.get('dataset1_name'), dataset2_name=session.get('dataset2_name'), dataset1_images=dataset1_images, dataset2_images=dataset2_images)
 
 if __name__ == '__main__':
     app.run(debug=True)

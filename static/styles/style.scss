@@ -32,6 +32,37 @@ main {
   box-shadow: 0 6px 32px rgba(0,0,0,0.09);
 }
 
+.side-by-side {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  max-width: 1200px;
+}
+
+.side-by-side section {
+  flex: 1;
+  background: #f3f6fa;
+  padding: 18px 16px 14px 16px;
+  border-radius: 8px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.03);
+  text-align: center;
+}
+
+.image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.image-grid img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+}
+
 .main-content {
   display: flex;
   flex-direction: column;
@@ -81,6 +112,22 @@ label {
   font-weight: 500;
   margin-bottom: 4px;
   color: #222;
+}
+
+input[type="text"] {
+  display: block;
+  width: 100%;
+  padding: 0.6em 0.8em;
+  font-size: 1em;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input[type="text"]:focus {
+  border-color: $primary-color;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(dodgerblue, 0.25);
 }
 
 input[type="file"] {
