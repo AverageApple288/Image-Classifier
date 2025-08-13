@@ -152,9 +152,10 @@ def train_model():
 
     batch_input = np.concatenate([flattened_results1, flattened_results2], axis=0)
 
-    epochs = 1000
-    learning_rate = 0.001
+    epochs = 10000
+    #learning_rate = 0.001
     #learning_rate = 0.0005
+    learning_rate = 0.0001
     num_neurons = 128
     num_input_features = flattened_results1[0].shape[0]
     hidden_weights = np.random.randn(num_input_features, num_neurons) # * np.sqrt(1.0 / num_input_features)
